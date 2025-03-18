@@ -19,6 +19,18 @@ exports.getMeetings = async (req, res) => {
 exports.createMeeting = async (req, res) => {
   const { title, start, end, organizer, project, roomId, email } = req.body;
 
+  // Check for overlapping meetings in the same room
+  const existingMeetings = await Meeting.find({
+    roomId,
+    $or: [
+      { start: { $lt: end }, end: { $gt: start } } // Overlap condition
+    ]
+  });
+
+  if (existingMeetings.length > 0) {
+    return res.status(400).json({ message: 'Time slot is already booked for this room.' });
+  }
+
   // Create new meeting object
   const meeting = new Meeting({ title, start, end, organizer, project, roomId, email });
 
