@@ -5,6 +5,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const connectDB = require('./config/db');
 const meetingRoutes = require('./routes/meetingRoutes');
+const projectRoutes = require('./routes/projectRoutes')
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use(bodyParser.json());
 
 // API Routes
 app.use('/api/meetings', meetingRoutes);
+app.use('/api/projects', projectRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
