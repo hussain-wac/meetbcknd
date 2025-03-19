@@ -5,46 +5,63 @@ const Project = require('../models/Project');
 
 // Helper function to recalculate and update room availability for a given meeting day
 const updateRoomAvailability = async (roomId, meetingDate) => {
-  // Use UTC day boundaries based on the meeting date
-  const dateString = new Date(meetingDate).toISOString().split('T')[0];
-  const startOfDay = new Date(dateString + "T00:00:00Z");
-  const endOfDay = new Date(dateString + "T23:59:59.999Z");
-  const totalDayMinutes = 24 * 60;
+  try {
+      // Convert the meeting date to a standardized format (UTC start and end of day)
+      const dateString = new Date(meetingDate).toISOString().split('T')[0];
+      const startOfDay = new Date(dateString + "T00:00:00Z");
+      const endOfDay = new Date(dateString + "T23:59:59.999Z");
 
-  // Find all meetings for this room that overlap with the day
-  const meetings = await Meeting.find({
-    roomId,
-    start: { $lt: endOfDay },
-    end: { $gt: startOfDay }
-  }).sort({ start: 1 });
+      const totalDayMinutes = 24 * 60; // 1440 minutes in a full day
 
-  let meetingDurationTotal = 0;
-  meetings.forEach(meeting => {
-    // Ensure the meeting times are limited to the day boundaries
-    const meetingStart = new Date(meeting.start) < startOfDay ? startOfDay : new Date(meeting.start);
-    const meetingEnd = new Date(meeting.end) > endOfDay ? endOfDay : new Date(meeting.end);
-    meetingDurationTotal += (meetingEnd - meetingStart) / (1000 * 60);
-  });
-  meetingDurationTotal = Math.round(meetingDurationTotal);
+      // Fetch all meetings for this room that overlap with the selected day
+      const meetings = await Meeting.find({
+          roomId,
+          start: { $lt: endOfDay }, // Meetings that start before the day ends
+          end: { $gt: startOfDay }   // Meetings that end after the day starts
+      }).sort({ start: 1 });
 
-  // Calculate available minutes and percentage
-  let availableMinutes = totalDayMinutes - meetingDurationTotal;
-  let availabilityPercentage = (availableMinutes / totalDayMinutes) * 100;
+      let occupiedMinutes = 0;
+      let lastEndTime = startOfDay; // Keep track of last occupied slot
 
-  // If no meetings exist, ensure full availability
-  if (meetings.length === 0) {
-    availableMinutes = totalDayMinutes;
-    availabilityPercentage = 100;
+      meetings.forEach(meeting => {
+          // Clip meeting times within the day boundaries
+          let meetingStart = new Date(meeting.start) < startOfDay ? startOfDay : new Date(meeting.start);
+          let meetingEnd = new Date(meeting.end) > endOfDay ? endOfDay : new Date(meeting.end);
+
+          // Ensure no overlapping time is counted twice
+          if (meetingStart >= lastEndTime) {
+              occupiedMinutes += (meetingEnd - meetingStart) / (1000 * 60); // Convert ms to minutes
+          } else if (meetingEnd > lastEndTime) {
+              occupiedMinutes += (meetingEnd - lastEndTime) / (1000 * 60);
+          }
+
+          lastEndTime = meetingEnd > lastEndTime ? meetingEnd : lastEndTime;
+      });
+
+      // Prevent negative values due to floating point errors
+      occupiedMinutes = Math.min(totalDayMinutes, Math.max(0, occupiedMinutes));
+      let availableMinutes = totalDayMinutes - occupiedMinutes;
+
+      // Ensure rounding is correct and percentage never exceeds 100%
+      let availabilityPercentage = Math.max(0, Math.min(100, (availableMinutes / totalDayMinutes) * 100));
+
+      // Round values properly
+      availableMinutes = Math.round(availableMinutes);
+      availabilityPercentage = Math.round(availabilityPercentage * 100) / 100; // Keep 2 decimal places
+
+      // Update the room's availability in the database
+      await Room.findOneAndUpdate(
+          { roomId },
+          {
+              totalAvailableMinutes: availableMinutes,
+              availabilityPercentage: availabilityPercentage
+          }
+      );
+
+      console.log(`Updated Room ${roomId} - Availability: ${availabilityPercentage}%`);
+  } catch (error) {
+      console.error("Error updating room availability:", error);
   }
-
-  // Update the room document with new availability values
-  await Room.findOneAndUpdate(
-    { roomId },
-    {
-      totalAvailableMinutes: availableMinutes,
-      availabilityPercentage: Math.round(availabilityPercentage * 100) / 100 // rounding to two decimals if needed
-    }
-  );
 };
 
 // GET all meetings for a specific room (existing code remains unchanged)
