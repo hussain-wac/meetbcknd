@@ -1,3 +1,5 @@
+//Models/Meeting.js
+
 const mongoose = require('mongoose');
 
 const meetingSchema = new mongoose.Schema({
