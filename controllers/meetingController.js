@@ -5,6 +5,7 @@ const Project = require('../models/Project');
 
 const updateRoomAvailability = async (roomId, meetingDate) => {
   const totalDayMinutes = 24 * 60; // 1440 minutes in a day
+  const timezoneOffset = 360; // 6 hours (360 minutes) adjustment for local time difference
   const currentDate = new Date(); // Current date and time (March 19, 2025, per system)
   const dateString = new Date(meetingDate).toISOString().split('T')[0];
   const startOfDay = new Date(dateString + "T00:00:00Z"); // Midnight UTC of meeting day
@@ -54,8 +55,10 @@ const updateRoomAvailability = async (roomId, meetingDate) => {
 
   // Calculate total occupied minutes
   const occupiedMinutes = timeline.reduce((sum, val) => sum + val, 0);
-  availableMinutes = totalDayMinutes - occupiedMinutes;
-  const availabilityPercentage = (availableMinutes / totalDayMinutes) * 100;
+  availableMinutes = totalDayMinutes - occupiedMinutes - timezoneOffset; // Subtract 6 hours (360 minutes)
+  if (availableMinutes < 0) availableMinutes = 0; // Prevent negative values
+
+  const adjustedAvailabilityPercentage = (availableMinutes / totalDayMinutes) * 100;
 
   // Update the room with the latest availability for this day
   await Room.updateOne(
@@ -63,7 +66,7 @@ const updateRoomAvailability = async (roomId, meetingDate) => {
     {
       $set: {
         totalAvailableMinutes: availableMinutes,
-        availabilityPercentage: Math.round(availabilityPercentage * 100) / 100
+        availabilityPercentage: Math.round(adjustedAvailabilityPercentage * 100) / 100
       }
     },
     { upsert: true }
@@ -71,8 +74,9 @@ const updateRoomAvailability = async (roomId, meetingDate) => {
 
   // Log the result
   console.log(`Room ${roomId}, Date ${dateString}`);
-  console.log(`Available Minutes: ${availableMinutes}, Availability: ${availabilityPercentage}%`);
+  console.log(`Available Minutes: ${availableMinutes}, Availability: ${adjustedAvailabilityPercentage}%`);
 };
+
 
 // GET all meetings for a specific room
 exports.getMeetings = async (req, res) => {
