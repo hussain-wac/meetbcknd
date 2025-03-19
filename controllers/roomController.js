@@ -4,7 +4,6 @@ const Room = require('../models/Room');
 // Function to get all rooms with stored availability details
 exports.getAllRoomsAvailability = async (req, res) => {
   try {
-    // Simply fetch the room documents; availability values were set on meeting changes
     const rooms = await Room.find();
     res.json(rooms);
   } catch (err) {
@@ -13,7 +12,7 @@ exports.getAllRoomsAvailability = async (req, res) => {
   }
 };
 
-// Function to add a new room (unchanged)
+// Function to add a new room
 exports.addRoom = async (req, res) => {
   try {
     const { roomId, name, capacity, features } = req.body;

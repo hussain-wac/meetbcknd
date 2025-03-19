@@ -3,51 +3,78 @@ const Meeting = require('../models/Meeting');
 const Room = require('../models/Room');
 const Project = require('../models/Project');
 
-// Helper function to recalculate and update room availability for a given meeting day
 const updateRoomAvailability = async (roomId, meetingDate) => {
-  // Use UTC day boundaries based on the meeting date
+  const totalDayMinutes = 24 * 60; // 1440 minutes in a day
+  const currentDate = new Date(); // Current date and time (March 19, 2025, per system)
   const dateString = new Date(meetingDate).toISOString().split('T')[0];
-  const startOfDay = new Date(dateString + "T00:00:00Z");
-  const endOfDay = new Date(dateString + "T23:59:59.999Z");
-  const totalDayMinutes = 24 * 60;
+  const startOfDay = new Date(dateString + "T00:00:00Z"); // Midnight UTC of meeting day
+  const endOfDay = new Date(dateString + "T23:59:59.999Z"); // End of meeting day UTC
 
-  // Find all meetings for this room that overlap with the day
+  // Fetch meetings for the room on the specified day
   const meetings = await Meeting.find({
     roomId,
     start: { $lt: endOfDay },
     end: { $gt: startOfDay }
   }).sort({ start: 1 });
 
-  let meetingDurationTotal = 0;
-  meetings.forEach(meeting => {
-    // Ensure the meeting times are limited to the day boundaries
-    const meetingStart = new Date(meeting.start) < startOfDay ? startOfDay : new Date(meeting.start);
-    const meetingEnd = new Date(meeting.end) > endOfDay ? endOfDay : new Date(meeting.end);
-    meetingDurationTotal += (meetingEnd - meetingStart) / (1000 * 60);
-  });
-  meetingDurationTotal = Math.round(meetingDurationTotal);
+  // Initialize timeline for the day
+  const timeline = new Array(totalDayMinutes).fill(0);
 
-  // Calculate available minutes and percentage
-  let availableMinutes = totalDayMinutes - meetingDurationTotal;
-  let availabilityPercentage = (availableMinutes / totalDayMinutes) * 100;
-
-  // If no meetings exist, ensure full availability
-  if (meetings.length === 0) {
-    availableMinutes = totalDayMinutes;
-    availabilityPercentage = 100;
+  // Block past time if the meeting day is today
+  let availableMinutes = totalDayMinutes;
+  if (dateString === currentDate.toISOString().split('T')[0]) {
+    const currentMinutes = Math.floor((currentDate - startOfDay) / (1000 * 60));
+    for (let i = 0; i < Math.min(currentMinutes, totalDayMinutes); i++) {
+      timeline[i] = 1; // Mark past minutes as occupied
+    }
+    availableMinutes = totalDayMinutes - currentMinutes; // Reduce available time by past minutes
   }
 
-  // Update the room document with new availability values
-  await Room.findOneAndUpdate(
+  // Mark occupied time for future meetings
+  meetings.forEach(meeting => {
+    const meetingStart = Math.max(
+      0,
+      Math.floor((new Date(meeting.start) - startOfDay) / (1000 * 60))
+    );
+    const meetingEnd = Math.min(
+      totalDayMinutes,
+      Math.ceil((new Date(meeting.end) - startOfDay) / (1000 * 60))
+    );
+
+    // Only count future meetings (skip if meeting has ended before current time)
+    if (dateString === currentDate.toISOString().split('T')[0]) {
+      const currentMinutes = Math.floor((currentDate - startOfDay) / (1000 * 60));
+      if (meetingEnd <= currentMinutes) return; // Skip past meetings
+    }
+
+    for (let i = meetingStart; i < meetingEnd; i++) {
+      timeline[i] = 1; // Mark minute as occupied
+    }
+  });
+
+  // Calculate total occupied minutes
+  const occupiedMinutes = timeline.reduce((sum, val) => sum + val, 0);
+  availableMinutes = totalDayMinutes - occupiedMinutes;
+  const availabilityPercentage = (availableMinutes / totalDayMinutes) * 100;
+
+  // Update the room with the latest availability for this day
+  await Room.updateOne(
     { roomId },
     {
-      totalAvailableMinutes: availableMinutes,
-      availabilityPercentage: Math.round(availabilityPercentage * 100) / 100 // rounding to two decimals if needed
-    }
+      $set: {
+        totalAvailableMinutes: availableMinutes,
+        availabilityPercentage: Math.round(availabilityPercentage * 100) / 100
+      }
+    },
+    { upsert: true }
   );
+
+  // Log the result
+  console.log(`Room ${roomId}, Date ${dateString}`);
+  console.log(`Available Minutes: ${availableMinutes}, Availability: ${availabilityPercentage}%`);
 };
 
-// GET all meetings for a specific room (existing code remains unchanged)
+// GET all meetings for a specific room
 exports.getMeetings = async (req, res) => {
   const roomId = req.query.roomId;
   try {
@@ -131,7 +158,7 @@ exports.createMeeting = async (req, res) => {
     }
     await room.save();
 
-    // Update room availability based on the meeting's start date (assumes meeting occurs within one day)
+    // Update room availability for the meeting day
     await updateRoomAvailability(roomId, newMeeting.start);
 
     res.status(201).json(newMeeting);
