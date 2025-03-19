@@ -72,10 +72,7 @@ exports.getAllRoomsAvailability = async (req, res) => {
             };
         }));
 
-
-
         res.json(roomAvailabilityData);
-        console.log(roomAvailabilityData)
     } catch (err) {
         console.error("Error fetching rooms availability:", err);
         res.status(500).json({ message: err.message });
