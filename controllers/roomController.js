@@ -9,18 +9,15 @@ exports.getAllRoomsAvailability = async (req, res) => {
             return res.status(400).json({ message: "Date is required." });
         }
 
-        const startOfDay = new Date(date);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(date);
-        endOfDay.setHours(23, 59, 59, 999);
+        // Explicitly set as UTC
+        const startOfDay = new Date(date + "T00:00:00Z");
+        const endOfDay = new Date(date + "T23:59:59.999Z");
 
         // Fetch all rooms
         const rooms = await Room.find().populate('meetings');
 
-        // Total minutes in a day
         const totalDayMinutes = 24 * 60;
 
-        // Process each room to calculate availability
         const roomAvailabilityData = await Promise.all(rooms.map(async (room) => {
             const meetings = await Meeting.find({
                 roomId: room.roomId,
@@ -35,7 +32,6 @@ exports.getAllRoomsAvailability = async (req, res) => {
                 let meetingStart = new Date(meeting.start);
                 let meetingEnd = new Date(meeting.end);
 
-                // Calculate gap before the meeting
                 if (meetingStart > previousEnd) {
                     let gapMinutes = (meetingStart - previousEnd) / (1000 * 60);
                     availableSlots.push({
@@ -49,7 +45,6 @@ exports.getAllRoomsAvailability = async (req, res) => {
                 previousEnd = meetingEnd;
             });
 
-            // Check for time after last meeting
             if (previousEnd < endOfDay) {
                 let gapMinutes = (endOfDay - previousEnd) / (1000 * 60);
                 availableSlots.push({
@@ -78,6 +73,7 @@ exports.getAllRoomsAvailability = async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 };
+
 
 // Function to add a new room
 exports.addRoom = async (req, res) => {
