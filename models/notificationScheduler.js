@@ -1,26 +1,27 @@
 const Meeting = require('./Meeting');
-
+const moment = require('moment-timezone');
 
 const checkUpcomingMeetings = async (io, connectedUsers) => {
   try {
-    const now = new Date();
-    const startWindow = new Date(now.getTime() + 10 * 60 * 1000);
-    const endWindow = new Date(now.getTime() + 11 * 60 * 1000);
-    console.log(`Checking for meetings between ${startWindow} and ${endWindow}`);
+    const now = moment().utc();
+    const startWindow = now.clone().add(10, 'minutes');
+    const endWindow = now.clone().add(11, 'minutes');
+
+    console.log(`Checking for meetings between ${startWindow.toISOString()} and ${endWindow.toISOString()}`);
+    console.log(`Server Local Time: ${now.local().format()} | UTC Time: ${now.format()}`);
 
     const upcomingMeetings = await Meeting.find({
-      start: { $gte: startWindow, $lt: endWindow }
+      start: { $gte: startWindow.toDate(), $lt: endWindow.toDate() }
     });
 
     console.log("Upcoming meetings found:", upcomingMeetings);
 
     if (upcomingMeetings.length > 0) {
-      // Notify users with upcoming meetings
       upcomingMeetings.forEach(meeting => {
         const socketId = connectedUsers.get(meeting.email);
         if (socketId) {
           io.to(socketId).emit('meetingNotification', {
-            message: `Your meeting "${meeting.title}" is starting in 10 minutes.`,
+            message: `Your meeting \"${meeting.title}\" is starting in 10 minutes.`,
             meetingId: meeting._id,
             start: meeting.start,
             roomId: meeting.roomId
@@ -29,7 +30,6 @@ const checkUpcomingMeetings = async (io, connectedUsers) => {
         }
       });
     } else {
-      // If there are no upcoming meetings, notify all connected users
       console.log("No upcoming meetings found. Sending default notification to all users.");
       connectedUsers.forEach((socketId, email) => {
         io.to(socketId).emit('meetingNotification', {
@@ -43,9 +43,7 @@ const checkUpcomingMeetings = async (io, connectedUsers) => {
   }
 };
 
-// Export a function to start the scheduler
 module.exports = function startScheduler(io, connectedUsers) {
-  // Check every minute (60000 ms)
   setInterval(() => {
     checkUpcomingMeetings(io, connectedUsers);
   }, 60000);
