@@ -1,4 +1,3 @@
-// controllers/meetingController.js
 const Meeting = require('../models/Meeting');
 const Room = require('../models/Room');
 const Project = require('../models/Project');
@@ -77,7 +76,6 @@ const updateRoomAvailability = async (roomId, meetingDate) => {
   console.log(`Available Minutes: ${availableMinutes}, Availability: ${adjustedAvailabilityPercentage}%`);
 };
 
-
 // GET all meetings for a specific room
 exports.getMeetings = async (req, res) => {
   const roomId = req.query.roomId;
@@ -136,8 +134,21 @@ exports.createMeeting = async (req, res) => {
       roomId,
       $or: [{ start: { $lt: end }, end: { $gt: start } }]
     });
+
     if (existingMeetings.length > 0) {
-      return res.status(400).json({ message: "Time slot is already booked for this room." });
+      // Prepare detailed response about overlapping meetings
+      const overlappingDetails = existingMeetings.map(conflict => ({
+        meetingId: conflict._id,
+        title: conflict.title,
+        start: conflict.start,
+        end: conflict.end,
+        roomId: conflict.roomId
+      }));
+
+      return res.status(409).json({
+        message: "Time slot conflicts with existing meeting(s).",
+        conflicts: overlappingDetails
+      });
     }
 
     // Create and save new meeting
@@ -168,6 +179,94 @@ exports.createMeeting = async (req, res) => {
     res.status(201).json(newMeeting);
   } catch (err) {
     console.error("Error creating meeting:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// PUT to update an existing meeting
+exports.updateMeeting = async (req, res) => {
+  try {
+    const { meetingId } = req.params; // Meeting ID from URL parameter
+    const { title, start, end, organizer, project, task, roomId, email } = req.body;
+
+    // Find the meeting by ID
+    const meeting = await Meeting.findById(meetingId);
+    if (!meeting) {
+      return res.status(404).json({ message: "Meeting not found." });
+    }
+
+    // Validate project if it's being updated
+    if (project && project !== meeting.project.toString()) {
+      const projectData = await Project.findOne({ projectId: project });
+      if (!projectData) {
+        return res.status(400).json({ message: "Invalid project ID." });
+      }
+      meeting.project = projectData._id;
+    }
+
+    // Check for overlapping meetings if start, end, or roomId is being updated
+    let overlappingDetails = null;
+    if (start || end || roomId) {
+      const updatedStart = start || meeting.start;
+      const updatedEnd = end || meeting.end;
+      const updatedRoomId = roomId || meeting.roomId;
+
+      const overlappingMeetings = await Meeting.find({
+        roomId: updatedRoomId,
+        _id: { $ne: meetingId }, // Exclude the current meeting
+        $or: [
+          { start: { $lt: updatedEnd }, end: { $gt: updatedStart } }
+        ]
+      });
+
+      if (overlappingMeetings.length > 0) {
+        // Prepare detailed response about overlapping meetings
+        overlappingDetails = overlappingMeetings.map(conflict => ({
+          meetingId: conflict._id,
+          title: conflict.title,
+          start: conflict.start,
+          end: conflict.end,
+          roomId: conflict.roomId
+        }));
+
+        return res.status(409).json({
+          message: "Updated time slot conflicts with existing meeting(s).",
+          conflicts: overlappingDetails
+        });
+      }
+    }
+
+    // Update fields if provided in the request body
+    if (title) meeting.title = title;
+    if (start) meeting.start = start;
+    if (end) meeting.end = end;
+    if (organizer) meeting.organizer = organizer;
+    if (task) meeting.task = task;
+    if (roomId) meeting.roomId = roomId;
+    if (email) meeting.email = email;
+
+    // Save the updated meeting
+    const updatedMeeting = await meeting.save();
+
+    // If the roomId or date changes, update availability for both old and new rooms/dates
+    const originalRoomId = req.body.originalRoomId || meeting.roomId; // Store original roomId if needed
+    if (roomId && roomId !== originalRoomId) {
+      await updateRoomAvailability(originalRoomId, meeting.start); // Update old room
+      await Room.updateOne(
+        { roomId: originalRoomId },
+        { $pull: { meetings: meetingId } } // Remove meeting from old room
+      );
+      await Room.updateOne(
+        { roomId },
+        { $addToSet: { meetings: meetingId } }, // Add meeting to new room
+        { upsert: true }
+      );
+    }
+    await updateRoomAvailability(meeting.roomId, meeting.start); // Update current/new room
+
+    res.json(updatedMeeting);
+  } catch (err) {
+    console.error("Error updating meeting:", err);
     res.status(500).json({ message: err.message });
   }
 };
