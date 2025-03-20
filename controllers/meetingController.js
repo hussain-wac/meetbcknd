@@ -270,3 +270,42 @@ exports.updateMeeting = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+
+
+// DELETE to remove an existing meeting
+exports.deleteMeeting = async (req, res) => {
+  try {
+    const { meetingId } = req.params; // Meeting ID from URL parameter
+
+    // Find and delete the meeting
+    const meeting = await Meeting.findById(meetingId);
+    if (!meeting) {
+      return res.status(404).json({ message: "Meeting not found." });
+    }
+
+    // Store roomId before deletion for availability update
+    const roomId = meeting.roomId;
+    const meetingStart = meeting.start;
+
+    // Delete the meeting
+    await Meeting.deleteOne({ _id: meetingId });
+
+    // Remove meeting reference from the room
+    await Room.updateOne(
+      { roomId },
+      { $pull: { meetings: meetingId } }
+    );
+
+    // Update room availability after deletion
+    await updateRoomAvailability(roomId, meetingStart);
+
+    res.status(200).json({ 
+      message: "Meeting deleted successfully",
+      deletedMeetingId: meetingId 
+    });
+  } catch (err) {
+    console.error("Error deleting meeting:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
