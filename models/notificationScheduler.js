@@ -50,7 +50,7 @@ const checkUpcomingMeetings = async (io, connectedUsers) => {
       const socketId = connectedUsers.get(meeting.email);
       if (socketId) {
         io.to(socketId).emit('meetingNotification', {
-          message: `Your meeting "${meeting.title}" is starting in 3 hours.`,
+          message: `Your meeting "${meeting.title}" is starting in 3 hours. in Room : ${meeting.roomId}`,
           meetingId: meeting._id,
           start: meeting.start,
           roomId: meeting.roomId
@@ -68,7 +68,7 @@ const checkUpcomingMeetings = async (io, connectedUsers) => {
       const socketId = connectedUsers.get(meeting.email);
       if (socketId) {
         io.to(socketId).emit('meetingNotification', {
-          message: `Your meeting "${meeting.title}" is starting in 1 hour.`,
+          message: `Your meeting "${meeting.title}" is starting in 1 hour.in Room : ${meeting.roomId}`,
           meetingId: meeting._id,
           start: meeting.start,
           roomId: meeting.roomId
@@ -77,7 +77,7 @@ const checkUpcomingMeetings = async (io, connectedUsers) => {
           { _id: meeting._id },
           { $set: { oneHourNotified: true } }
         );
-        console.log(`1-hour notification sent to ${meeting.email} for meeting ${meeting._id}`);
+        console.log(`1-hour notification sent to ${meeting.email} for meeting ${meeting._id}in Room : ${meeting.roomId} `);
       }
     });
 
@@ -86,7 +86,7 @@ const checkUpcomingMeetings = async (io, connectedUsers) => {
       const socketId = connectedUsers.get(meeting.email);
       if (socketId) {
         io.to(socketId).emit('meetingNotification', {
-          message: `Your meeting "${meeting.title}" is starting in 10 minutes.`,
+          message: `Your meeting "${meeting.title}" is starting in 10 minutes. in Room : ${meeting.roomId}`,
           meetingId: meeting._id,
           start: meeting.start,
           roomId: meeting.roomId
@@ -104,7 +104,7 @@ const checkUpcomingMeetings = async (io, connectedUsers) => {
       const socketId = connectedUsers.get(meeting.email);
       if (socketId) {
         io.to(socketId).emit('meetingNotification', {
-          message: `Your meeting "${meeting.title}" is starting in 1 minute!`,
+          message: `Your meeting "${meeting.title}" is starting in 1 minute! in Room : ${meeting.roomId}`,
           meetingId: meeting._id,
           start: meeting.start,
           roomId: meeting.roomId
