@@ -8,4 +8,8 @@ router.get('/availability/:date', roomController.getAllRoomsAvailability);
 // Add a new room
 router.post('/add', roomController.addRoom);
 
+// Get room details by roomId
+router.get('/:roomId', roomController.getRoomById);
+
+
 module.exports = router;

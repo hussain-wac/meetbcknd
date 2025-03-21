@@ -34,3 +34,19 @@ exports.addRoom = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+exports.getRoomById = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const room = await Room.findOne({ roomId }).populate('meetings');
+
+    if (!room) {
+      return res.status(404).json({ message: "Room not found." });
+    }
+
+    res.json(room);
+  } catch (err) {
+    console.error("Error fetching room:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
