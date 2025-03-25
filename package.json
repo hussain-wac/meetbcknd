@@ -13,6 +13,7 @@
         "express": "^4.18.0",
         "moment-timezone": "^0.5.47",
         "mongoose": "^6.3.0",
+        "node-cron": "^3.0.3",
         "socket.io": "^4.8.1",
         "socket.io-client": "^4.8.1"
     },
