@@ -1,72 +1,6 @@
 const Meeting = require('../models/Meeting');
 const Room = require('../models/Room');
 
-const updateRoomAvailability = async (roomId, meetingDate) => {
-  const totalDayMinutes = 24 * 60; // 1440 minutes in a day
-  const timezoneOffset = 360; // 6 hours (360 minutes) adjustment
-  const currentDate = new Date(); // Current date and time
-  const dateString = new Date(meetingDate).toISOString().split('T')[0];
-  const startOfDay = new Date(dateString + "T00:00:00Z");
-  const endOfDay = new Date(dateString + "T23:59:59.999Z");
-
-  const meetings = await Meeting.find({
-    roomId,
-    start: { $lt: endOfDay },
-    end: { $gt: startOfDay }
-  }).sort({ start: 1 });
-
-  const timeline = new Array(totalDayMinutes).fill(0);
-  let availableMinutes = totalDayMinutes;
-  
-  if (dateString === currentDate.toISOString().split('T')[0]) {
-    const currentMinutes = Math.floor((currentDate - startOfDay) / (1000 * 60));
-    for (let i = 0; i < Math.min(currentMinutes, totalDayMinutes); i++) {
-      timeline[i] = 1;
-    }
-    availableMinutes = totalDayMinutes - currentMinutes;
-  }
-
-  meetings.forEach(meeting => {
-    const meetingStart = Math.max(
-      0,
-      Math.floor((new Date(meeting.start) - startOfDay) / (1000 * 60))
-    );
-    const meetingEnd = Math.min(
-      totalDayMinutes,
-      Math.ceil((new Date(meeting.end) - startOfDay) / (1000 * 60))
-    );
-
-    if (dateString === currentDate.toISOString().split('T')[0]) {
-      const currentMinutes = Math.floor((currentDate - startOfDay) / (1000 * 60));
-      if (meetingEnd <= currentMinutes) return;
-    }
-
-    for (let i = meetingStart; i < meetingEnd; i++) {
-      timeline[i] = 1;
-    }
-  });
-
-  const occupiedMinutes = timeline.reduce((sum, val) => sum + val, 0);
-  availableMinutes = totalDayMinutes - occupiedMinutes - timezoneOffset;
-  if (availableMinutes < 0) availableMinutes = 0;
-
-  const adjustedAvailabilityPercentage = (availableMinutes / totalDayMinutes) * 100;
-
-  await Room.updateOne(
-    { roomId },
-    {
-      $set: {
-        totalAvailableMinutes: availableMinutes,
-        availabilityPercentage: Math.round(adjustedAvailabilityPercentage * 100) / 100
-      }
-    },
-    { upsert: true }
-  );
-
-  console.log(`Room ${roomId}, Date ${dateString}`);
-  console.log(`Available Minutes: ${availableMinutes}, Availability: ${adjustedAvailabilityPercentage}%`);
-};
-
 // GET all meetings for a specific room
 exports.getMeetings = async (req, res) => {
   const roomId = req.query.roomId;
@@ -107,9 +41,22 @@ exports.createMeeting = async (req, res) => {
       return res.status(400).json({ message: "Members must be a non-empty array." });
     }
 
+    // Parse start and end times explicitly to avoid timezone confusion
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+
+    // Log parsed times for debugging
+    console.log("Parsed start time:", startDate.toISOString());
+    console.log("Parsed end time:", endDate.toISOString());
+
+    // Validate that the parsed dates are valid
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      return res.status(400).json({ message: "Invalid start or end time format." });
+    }
+
     const existingMeetings = await Meeting.find({
       roomId,
-      $or: [{ start: { $lt: end }, end: { $gt: start } }]
+      $or: [{ start: { $lt: endDate }, end: { $gt: startDate } }]
     });
 
     if (existingMeetings.length > 0) {
@@ -128,16 +75,16 @@ exports.createMeeting = async (req, res) => {
 
     const currentTime = new Date();
     let status = 'upcoming';
-    if (currentTime >= new Date(start) && currentTime <= new Date(end)) {
+    if (currentTime >= startDate && currentTime <= endDate) {
       status = 'running';
-    } else if (currentTime > new Date(end)) {
+    } else if (currentTime > endDate) {
       status = 'completed';
     }
 
     const meeting = new Meeting({
       title,
-      start,
-      end,
+      start: startDate,
+      end: endDate,
       organizer,
       members,
       meetingType,
@@ -154,8 +101,6 @@ exports.createMeeting = async (req, res) => {
       room.meetings.push(newMeeting._id);
     }
     await room.save();
-
-    await updateRoomAvailability(roomId, newMeeting.start);
 
     res.status(201).json(newMeeting);
   } catch (err) {
@@ -177,8 +122,8 @@ exports.updateMeeting = async (req, res) => {
 
     let overlappingDetails = null;
     if (start || end || roomId) {
-      const updatedStart = start || meeting.start;
-      const updatedEnd = end || meeting.end;
+      const updatedStart = start ? new Date(start) : meeting.start;
+      const updatedEnd = end ? new Date(end) : meeting.end;
       const updatedRoomId = roomId || meeting.roomId;
 
       const overlappingMeetings = await Meeting.find({
@@ -203,8 +148,8 @@ exports.updateMeeting = async (req, res) => {
     }
 
     if (title) meeting.title = title;
-    if (start) meeting.start = start;
-    if (end) meeting.end = end;
+    if (start) meeting.start = new Date(start);
+    if (end) meeting.end = new Date(end);
     if (organizer) meeting.organizer = organizer;
     if (members) {
       if (!Array.isArray(members) || members.length === 0) {
@@ -233,7 +178,6 @@ exports.updateMeeting = async (req, res) => {
 
     const originalRoomId = req.body.originalRoomId || meeting.roomId;
     if (roomId && roomId !== originalRoomId) {
-      await updateRoomAvailability(originalRoomId, meeting.start);
       await Room.updateOne(
         { roomId: originalRoomId },
         { $pull: { meetings: meetingId } }
@@ -244,7 +188,6 @@ exports.updateMeeting = async (req, res) => {
         { upsert: true }
       );
     }
-    await updateRoomAvailability(meeting.roomId, meeting.start);
 
     res.json(updatedMeeting);
   } catch (err) {
@@ -264,7 +207,6 @@ exports.deleteMeeting = async (req, res) => {
     }
 
     const roomId = meeting.roomId;
-    const meetingStart = meeting.start;
 
     await Meeting.deleteOne({ _id: meetingId });
 
@@ -272,8 +214,6 @@ exports.deleteMeeting = async (req, res) => {
       { roomId },
       { $pull: { meetings: meetingId } }
     );
-
-    await updateRoomAvailability(roomId, meetingStart);
 
     res.status(200).json({ 
       message: "Meeting deleted successfully",
