@@ -4,8 +4,8 @@ const mongoose = require('mongoose');
 const meetingSchema = new mongoose.Schema({
   title: { type: String, required: true },
   organizer: { type: String, required: true },
-  project: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true },
-  task: { type: String, required: true },
+  members: [{ type: String, required: true }],
+  meetingType: { type: String, required: true },
   start: { type: Date, required: true },
   end: { type: Date, required: true },
   roomId: { type: String, required: true },
@@ -13,7 +13,7 @@ const meetingSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: ['upcoming', 'running', 'completed'],
-    default: 'upcoming', // Default to 'upcoming' when a meeting is created
+    default: 'upcoming',
     required: true
   }
 });
