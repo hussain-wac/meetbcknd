@@ -7,6 +7,8 @@ const meetingRoutes = require('./routes/meetingRoutes');
 const projectRoutes = require('./routes/projectRoutes');
 const roomRoutes = require('./routes/roomRoutes');
 const startScheduler = require('./models/notificationScheduler');
+const cron = require('node-cron');
+const updateMeetingStatus = require('./utils/updateMeetingStatus');
 
 const app = express();
 connectDB();
@@ -55,6 +57,10 @@ io.on('connection', (socket) => {
 
 
 startScheduler(io, connectedUsers);
+cron.schedule('* * * * *', () => {
+  console.log('Running meeting status update...');
+  updateMeetingStatus();
+});
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

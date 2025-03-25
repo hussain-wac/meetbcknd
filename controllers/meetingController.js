@@ -88,23 +88,21 @@ exports.getMeetings = async (req, res) => {
       return res.status(404).json({ message: 'Room not found' });
     }
     const formattedMeetings = room.meetings.map(meeting => {
-      if (!meeting.project) {
-        console.warn(`Warning: Meeting ${meeting._id} has no associated project.`);
-        return { ...meeting.toObject(), projectName: 'Unknown', taskName: 'Unknown' };
-      }
-      const taskDetails = meeting.project.tasks?.find(task => task.taskId === meeting.task) || {};
+      const project = meeting.project || {};
+      const taskDetails = project.tasks?.find(task => task.taskId === meeting.task) || {};
       return {
         _id: meeting._id,
         title: meeting.title,
         organizer: meeting.organizer,
-        projectId: meeting.project._id,
-        projectName: meeting.project.project || 'Unknown',
+        projectId: project._id || null,
+        projectName: project.project || 'Unknown',
         taskId: meeting.task,
         taskName: taskDetails.task || 'Unknown',
         start: meeting.start,
         end: meeting.end,
         roomId: meeting.roomId,
-        email: meeting.email
+        email: meeting.email,
+        status: meeting.status // Include stored status
       };
     });
     res.json(formattedMeetings);
@@ -112,8 +110,8 @@ exports.getMeetings = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
 // POST to create a new meeting
+
 exports.createMeeting = async (req, res) => {
   try {
     const { title, start, end, organizer, project, task, roomId, email } = req.body;
@@ -123,20 +121,17 @@ exports.createMeeting = async (req, res) => {
       return res.status(400).json({ message: "All fields are required." });
     }
 
-    // Validate project
     const projectData = await Project.findOne({ projectId: project });
     if (!projectData) {
       return res.status(400).json({ message: "Invalid project ID." });
     }
 
-    // Check for overlapping meetings in the room
     const existingMeetings = await Meeting.find({
       roomId,
       $or: [{ start: { $lt: end }, end: { $gt: start } }]
     });
 
     if (existingMeetings.length > 0) {
-      // Prepare detailed response about overlapping meetings
       const overlappingDetails = existingMeetings.map(conflict => ({
         meetingId: conflict._id,
         title: conflict.title,
@@ -144,14 +139,20 @@ exports.createMeeting = async (req, res) => {
         end: conflict.end,
         roomId: conflict.roomId
       }));
-
       return res.status(409).json({
         message: "Time slot conflicts with existing meeting(s).",
         conflicts: overlappingDetails
       });
     }
 
-    // Create and save new meeting
+    const currentTime = new Date();
+    let status = 'upcoming';
+    if (currentTime >= new Date(start) && currentTime <= new Date(end)) {
+      status = 'running';
+    } else if (currentTime > new Date(end)) {
+      status = 'completed';
+    }
+
     const meeting = new Meeting({
       title,
       start,
@@ -160,11 +161,11 @@ exports.createMeeting = async (req, res) => {
       project: projectData._id,
       task,
       roomId,
-      email
+      email,
+      status // Set initial status
     });
     const newMeeting = await meeting.save();
 
-    // Add meeting reference to the room
     let room = await Room.findOne({ roomId });
     if (!room) {
       room = new Room({ roomId, meetings: [newMeeting._id] });
@@ -173,7 +174,6 @@ exports.createMeeting = async (req, res) => {
     }
     await room.save();
 
-    // Update room availability for the meeting day
     await updateRoomAvailability(roomId, newMeeting.start);
 
     res.status(201).json(newMeeting);
@@ -183,19 +183,18 @@ exports.createMeeting = async (req, res) => {
   }
 };
 
+
 // PUT to update an existing meeting
 exports.updateMeeting = async (req, res) => {
   try {
-    const { meetingId } = req.params; // Meeting ID from URL parameter
+    const { meetingId } = req.params;
     const { title, start, end, organizer, project, task, roomId, email } = req.body;
 
-    // Find the meeting by ID
     const meeting = await Meeting.findById(meetingId);
     if (!meeting) {
       return res.status(404).json({ message: "Meeting not found." });
     }
 
-    // Validate project if it's being updated
     if (project && project !== meeting.project.toString()) {
       const projectData = await Project.findOne({ projectId: project });
       if (!projectData) {
@@ -204,7 +203,6 @@ exports.updateMeeting = async (req, res) => {
       meeting.project = projectData._id;
     }
 
-    // Check for overlapping meetings if start, end, or roomId is being updated
     let overlappingDetails = null;
     if (start || end || roomId) {
       const updatedStart = start || meeting.start;
@@ -213,14 +211,11 @@ exports.updateMeeting = async (req, res) => {
 
       const overlappingMeetings = await Meeting.find({
         roomId: updatedRoomId,
-        _id: { $ne: meetingId }, // Exclude the current meeting
-        $or: [
-          { start: { $lt: updatedEnd }, end: { $gt: updatedStart } }
-        ]
+        _id: { $ne: meetingId },
+        $or: [{ start: { $lt: updatedEnd }, end: { $gt: updatedStart } }]
       });
 
       if (overlappingMeetings.length > 0) {
-        // Prepare detailed response about overlapping meetings
         overlappingDetails = overlappingMeetings.map(conflict => ({
           meetingId: conflict._id,
           title: conflict.title,
@@ -228,7 +223,6 @@ exports.updateMeeting = async (req, res) => {
           end: conflict.end,
           roomId: conflict.roomId
         }));
-
         return res.status(409).json({
           message: "Updated time slot conflicts with existing meeting(s).",
           conflicts: overlappingDetails
@@ -236,7 +230,6 @@ exports.updateMeeting = async (req, res) => {
       }
     }
 
-    // Update fields if provided in the request body
     if (title) meeting.title = title;
     if (start) meeting.start = start;
     if (end) meeting.end = end;
@@ -245,24 +238,36 @@ exports.updateMeeting = async (req, res) => {
     if (roomId) meeting.roomId = roomId;
     if (email) meeting.email = email;
 
-    // Save the updated meeting
+    // Update status based on new start/end times
+    const currentTime = new Date();
+    if (start || end) {
+      const newStart = start ? new Date(start) : meeting.start;
+      const newEnd = end ? new Date(end) : meeting.end;
+      if (currentTime < newStart) {
+        meeting.status = 'upcoming';
+      } else if (currentTime >= newStart && currentTime <= newEnd) {
+        meeting.status = 'running';
+      } else if (currentTime > newEnd) {
+        meeting.status = 'completed';
+      }
+    }
+
     const updatedMeeting = await meeting.save();
 
-    // If the roomId or date changes, update availability for both old and new rooms/dates
-    const originalRoomId = req.body.originalRoomId || meeting.roomId; // Store original roomId if needed
+    const originalRoomId = req.body.originalRoomId || meeting.roomId;
     if (roomId && roomId !== originalRoomId) {
-      await updateRoomAvailability(originalRoomId, meeting.start); // Update old room
+      await updateRoomAvailability(originalRoomId, meeting.start);
       await Room.updateOne(
         { roomId: originalRoomId },
-        { $pull: { meetings: meetingId } } // Remove meeting from old room
+        { $pull: { meetings: meetingId } }
       );
       await Room.updateOne(
         { roomId },
-        { $addToSet: { meetings: meetingId } }, // Add meeting to new room
+        { $addToSet: { meetings: meetingId } },
         { upsert: true }
       );
     }
-    await updateRoomAvailability(meeting.roomId, meeting.start); // Update current/new room
+    await updateRoomAvailability(meeting.roomId, meeting.start);
 
     res.json(updatedMeeting);
   } catch (err) {
@@ -270,7 +275,6 @@ exports.updateMeeting = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
 
 
 // DELETE to remove an existing meeting
