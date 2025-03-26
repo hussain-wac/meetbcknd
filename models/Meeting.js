@@ -4,7 +4,10 @@ const mongoose = require('mongoose');
 const meetingSchema = new mongoose.Schema({
   title: { type: String, required: true },
   organizer: { type: String, required: true },
-  members: [{ type: String, required: true }],
+  members: [{
+    name: { type: String, required: true },
+    email: { type: String, required: true }
+  }],
   meetingType: { type: String, required: true },
   start: { type: Date, required: true },
   end: { type: Date, required: true },

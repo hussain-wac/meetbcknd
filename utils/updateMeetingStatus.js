@@ -1,4 +1,3 @@
-// utils/updateMeetingStatus.js
 const Meeting = require('../models/Meeting');
 
 const updateMeetingStatus = async () => {
@@ -17,9 +16,11 @@ const updateMeetingStatus = async () => {
       }
 
       // Only update if the status has changed to avoid unnecessary writes
-      if (meeting.status !== newStatus) {
-        meeting.status = newStatus;
-        await meeting.save();
+      if (newStatus && meeting.status !== newStatus) {
+        await Meeting.updateOne(
+          { _id: meeting._id }, // Match the meeting by ID
+          { $set: { status: newStatus } } // Update only the status field
+        );
       }
     });
 
