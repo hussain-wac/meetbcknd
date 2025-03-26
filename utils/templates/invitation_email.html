@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meeting Confirmation</title>
+    <title>Meeting Invitation</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
         
@@ -24,7 +24,7 @@
             overflow: hidden;
         }
         .header {
-            background: linear-gradient(135deg, #007bff, #0056b3);
+            background: linear-gradient(135deg, #28a745, #218838);
             color: white;
             padding: 20px;
             text-align: center;
@@ -41,7 +41,7 @@
             display: inline-block;
             padding: 12px 24px;
             margin-top: 20px;
-            background: linear-gradient(135deg, #007bff, #0056b3);
+            background: linear-gradient(135deg, #28a745, #218838);
             color: white;
             text-decoration: none;
             border-radius: 8px;
@@ -71,16 +71,18 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Meeting Confirmation</h1>
+            <h1>Meeting Invitation</h1>
         </div>
         <div class="content">
             <p>Dear <strong>{{name}}</strong>,</p>
             <div class="details">
-                <p>Your meeting "<strong>{{title}}</strong>" has been successfully scheduled.</p>
+                <p>You have been invited to a meeting: "<strong>{{title}}</strong>"</p>
+                <p><strong>Organized by:</strong> {{organizer}}</p>
                 <p><strong>Date & Time:</strong> {{date}}</p>
+                <p><strong>Meeting Type:</strong> {{meetingType}}</p>
             </div>
-            <p>You can manage your meeting details using the link below:</p>
-            <a href="{{meeting_link}}" class="button">View Meeting</a>
+            <p>Please review the meeting details and join using the link below:</p>
+            <a href="{{meeting_link}}" class="button">Join Meeting</a>
         </div>
         <div class="footer">
             <p>© 2024 Wacspace Team. All rights reserved.</p>
