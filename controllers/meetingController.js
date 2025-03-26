@@ -2,6 +2,7 @@
 
 const Meeting = require('../models/Meeting');
 const Room = require('../models/Room');
+const sendEmail = require('../utils/email');
 
 // GET all meetings for a specific room
 exports.getMeetings = async (req, res) => {
@@ -29,11 +30,12 @@ exports.getMeetings = async (req, res) => {
   }
 };
 
+
 // POST to create a new meeting
+
 exports.createMeeting = async (req, res) => {
   try {
     const { title, start, end, organizer, members, meetingType, roomId, email } = req.body;
-    console.log("Received request body:", req.body);
 
     if (!title || !start || !end || !organizer || !members || !meetingType || !roomId || !email) {
       return res.status(400).json({ message: "All fields are required." });
@@ -43,22 +45,15 @@ exports.createMeeting = async (req, res) => {
       return res.status(400).json({ message: "Members must be a non-empty array." });
     }
 
-    // Validate members structure
     for (const member of members) {
       if (!member.name || !member.email) {
         return res.status(400).json({ message: "Each member must have a name and email." });
       }
     }
 
-    // Parse start and end times explicitly to avoid timezone confusion
     const startDate = new Date(start);
     const endDate = new Date(end);
 
-    // Log parsed times for debugging
-    console.log("Parsed start time:", startDate.toISOString());
-    console.log("Parsed end time:", endDate.toISOString());
-
-    // Validate that the parsed dates are valid
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
       return res.status(400).json({ message: "Invalid start or end time format." });
     }
@@ -69,16 +64,15 @@ exports.createMeeting = async (req, res) => {
     });
 
     if (existingMeetings.length > 0) {
-      const overlappingDetails = existingMeetings.map(conflict => ({
-        meetingId: conflict._id,
-        title: conflict.title,
-        start: conflict.start,
-        end: conflict.end,
-        roomId: conflict.roomId
-      }));
       return res.status(409).json({
         message: "Time slot conflicts with existing meeting(s).",
-        conflicts: overlappingDetails
+        conflicts: existingMeetings.map(conflict => ({
+          meetingId: conflict._id,
+          title: conflict.title,
+          start: conflict.start,
+          end: conflict.end,
+          roomId: conflict.roomId
+        }))
       });
     }
 
@@ -95,12 +89,13 @@ exports.createMeeting = async (req, res) => {
       start: startDate,
       end: endDate,
       organizer,
-      members, // Now an array of { name, email } objects
+      members,
       meetingType,
       roomId,
       email,
       status
     });
+
     const newMeeting = await meeting.save();
 
     let room = await Room.findOne({ roomId });
@@ -111,44 +106,26 @@ exports.createMeeting = async (req, res) => {
     }
     await room.save();
 
-    // Send the response to the client immediately
     res.status(201).json(newMeeting);
 
-    // Send emails in the background
-    const sendEmail = require('../utils/email');
-    // Email to organizer
-    sendEmail(
-      newMeeting.email,
-      'Meeting Confirmation: Your Meeting Has Been Scheduled',
-      `Dear ${newMeeting.organizer},
-    
-    Your meeting, **"${newMeeting.title}"**, has been successfully scheduled.  
-    
-    **Date & Time:** ${newMeeting.start.toLocaleString()}  
-    
-    You can manage your meeting details in your Wacspace account.  
-    
-    Best regards,  
-    The Wacspace Team`
-    );
-    // Emails to members
-    newMeeting.members.forEach(member => {
-      sendEmail(
-        member.email,
-        'Invitation: New Meeting Scheduled',
-        `Dear ${member.name},
-    
-    You have been invited to a meeting.  
-    
-    **Meeting Title:** ${newMeeting.title}  
-    **Scheduled Date & Time:** ${newMeeting.start.toLocaleString()}  
-    **Organizer:** ${newMeeting.organizer}  
-    
-    Please check your Wacspace account for more details.  
-    
-    Best regards,  
-    The Wacspace Team`
-      );
+    // Send confirmation email to the organizer
+    sendEmail(email, 'Meeting Confirmation: Your Meeting Has Been Scheduled', 'confirmation_email', {
+      name: organizer,
+      title,
+      date: new Date(start).toLocaleString(),
+      organizer,
+      meeting_link: `https://wacspace.vercel.app/schedule?roomId=${roomId}`
+    });
+
+    // Send invitation emails to members
+    members.forEach(member => {
+      sendEmail(member.email, 'Invitation: New Meeting Scheduled', 'invitation_email', {
+        name: member.name,
+        title,
+        date: new Date(start).toLocaleString(),
+        organizer,
+        meeting_link: `https://wacspace.vercel.app/schedule?roomId=${roomId}`
+      });
     });
 
   } catch (err) {
@@ -156,6 +133,8 @@ exports.createMeeting = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+
 
 // PUT to update an existing meeting
 exports.updateMeeting = async (req, res) => {
