@@ -1,3 +1,5 @@
+//controlers/meetingController.js
+
 const Meeting = require('../models/Meeting');
 const Room = require('../models/Room');
 
@@ -13,7 +15,7 @@ exports.getMeetings = async (req, res) => {
       _id: meeting._id,
       title: meeting.title,
       organizer: meeting.organizer,
-      members: meeting.members,
+      members: meeting.members, // Now an array of { name, email } objects
       meetingType: meeting.meetingType,
       start: meeting.start,
       end: meeting.end,
@@ -39,6 +41,13 @@ exports.createMeeting = async (req, res) => {
 
     if (!Array.isArray(members) || members.length === 0) {
       return res.status(400).json({ message: "Members must be a non-empty array." });
+    }
+
+    // Validate members structure
+    for (const member of members) {
+      if (!member.name || !member.email) {
+        return res.status(400).json({ message: "Each member must have a name and email." });
+      }
     }
 
     // Parse start and end times explicitly to avoid timezone confusion
@@ -86,7 +95,7 @@ exports.createMeeting = async (req, res) => {
       start: startDate,
       end: endDate,
       organizer,
-      members,
+      members, // Now an array of { name, email } objects
       meetingType,
       roomId,
       email,
@@ -102,7 +111,26 @@ exports.createMeeting = async (req, res) => {
     }
     await room.save();
 
+    // Send the response to the client immediately
     res.status(201).json(newMeeting);
+
+    // Send emails in the background
+    const sendEmail = require('../utils/email');
+    // Email to organizer
+    sendEmail(
+      newMeeting.email,
+      'Meeting Created',
+      `You have created a meeting: ${newMeeting.title} on ${newMeeting.start.toLocaleString()}`
+    );
+    // Emails to members
+    newMeeting.members.forEach(member => {
+      sendEmail(
+        member.email, // Use member.email instead of memberEmail
+        'New Meeting Invitation',
+        `You have been invited to a meeting: ${newMeeting.title} on ${newMeeting.start.toLocaleString()} by ${newMeeting.organizer}. Dear ${member.name},`
+      );
+    });
+
   } catch (err) {
     console.error("Error creating meeting:", err);
     res.status(500).json({ message: err.message });
@@ -155,7 +183,13 @@ exports.updateMeeting = async (req, res) => {
       if (!Array.isArray(members) || members.length === 0) {
         return res.status(400).json({ message: "Members must be a non-empty array." });
       }
-      meeting.members = members;
+      // Validate members structure
+      for (const member of members) {
+        if (!member.name || !member.email) {
+          return res.status(400).json({ message: "Each member must have a name and email." });
+        }
+      }
+      meeting.members = members; // Update with array of { name, email } objects
     }
     if (meetingType) meeting.meetingType = meetingType;
     if (roomId) meeting.roomId = roomId;
