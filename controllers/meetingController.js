@@ -119,15 +119,35 @@ exports.createMeeting = async (req, res) => {
     // Email to organizer
     sendEmail(
       newMeeting.email,
-      'Meeting Created',
-      `You have created a meeting: ${newMeeting.title} on ${newMeeting.start.toLocaleString()}`
+      'Meeting Confirmation: Your Meeting Has Been Scheduled',
+      `Dear ${newMeeting.organizer},
+    
+    Your meeting, **"${newMeeting.title}"**, has been successfully scheduled.  
+    
+    **Date & Time:** ${newMeeting.start.toLocaleString()}  
+    
+    You can manage your meeting details in your Wacspace account.  
+    
+    Best regards,  
+    The Wacspace Team`
     );
     // Emails to members
     newMeeting.members.forEach(member => {
       sendEmail(
-        member.email, // Use member.email instead of memberEmail
-        'New Meeting Invitation',
-        `You have been invited to a meeting: ${newMeeting.title} on ${newMeeting.start.toLocaleString()} by ${newMeeting.organizer}. Dear ${member.name},`
+        member.email,
+        'Invitation: New Meeting Scheduled',
+        `Dear ${member.name},
+    
+    You have been invited to a meeting.  
+    
+    **Meeting Title:** ${newMeeting.title}  
+    **Scheduled Date & Time:** ${newMeeting.start.toLocaleString()}  
+    **Organizer:** ${newMeeting.organizer}  
+    
+    Please check your Wacspace account for more details.  
+    
+    Best regards,  
+    The Wacspace Team`
       );
     });
 
