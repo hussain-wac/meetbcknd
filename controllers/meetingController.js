@@ -43,22 +43,15 @@ exports.createMeeting = async (req, res) => {
       return res.status(400).json({ message: "Members must be a non-empty array." });
     }
 
-    // Validate members structure
     for (const member of members) {
       if (!member.name || !member.email) {
         return res.status(400).json({ message: "Each member must have a name and email." });
       }
     }
 
-    // Parse start and end times explicitly to avoid timezone confusion
     const startDate = new Date(start);
     const endDate = new Date(end);
 
-    // Log parsed times for debugging
-    console.log("Parsed start time:", startDate.toISOString());
-    console.log("Parsed end time:", endDate.toISOString());
-
-    // Validate that the parsed dates are valid
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
       return res.status(400).json({ message: "Invalid start or end time format." });
     }
@@ -69,16 +62,9 @@ exports.createMeeting = async (req, res) => {
     });
 
     if (existingMeetings.length > 0) {
-      const overlappingDetails = existingMeetings.map(conflict => ({
-        meetingId: conflict._id,
-        title: conflict.title,
-        start: conflict.start,
-        end: conflict.end,
-        roomId: conflict.roomId
-      }));
       return res.status(409).json({
         message: "Time slot conflicts with existing meeting(s).",
-        conflicts: overlappingDetails
+        conflicts: existingMeetings
       });
     }
 
@@ -95,7 +81,7 @@ exports.createMeeting = async (req, res) => {
       start: startDate,
       end: endDate,
       organizer,
-      members, // Now an array of { name, email } objects
+      members,
       meetingType,
       roomId,
       email,
@@ -111,23 +97,35 @@ exports.createMeeting = async (req, res) => {
     }
     await room.save();
 
-    // Send the response to the client immediately
     res.status(201).json(newMeeting);
 
-    // Send emails in the background
-    const sendEmail = require('../utils/email');
+    // **Send Emails**
+    const formattedStart = startDate.toLocaleString();
+    const formattedEnd = endDate.toLocaleString();
+    const memberList = members.map(m => `${m.name} (${m.email})`).join(', ');
+
     // Email to organizer
     sendEmail(
       newMeeting.email,
-      'Meeting Created',
-      `You have created a meeting: ${newMeeting.title} on ${newMeeting.start.toLocaleString()}`
+      `Confirmation: Your Meeting "${newMeeting.title}" is Scheduled`,
+      `Dear ${newMeeting.organizer},\n\nYour meeting "${newMeeting.title}" has been successfully scheduled.\n\n` +
+      `📅 **Date & Time:** ${formattedStart} - ${formattedEnd}\n` +
+      `📍 **Location:** ${newMeeting.roomId}\n` +
+      `👥 **Attendees:** ${memberList}\n\n` +
+      `You can manage or update your meeting anytime.\n\nBest regards,\nWacspace Team`
     );
+
     // Emails to members
     newMeeting.members.forEach(member => {
       sendEmail(
-        member.email, // Use member.email instead of memberEmail
-        'New Meeting Invitation',
-        `You have been invited to a meeting: ${newMeeting.title} on ${newMeeting.start.toLocaleString()} by ${newMeeting.organizer}. Dear ${member.name},`
+        member.email,
+        `Invitation: You’re Invited to “${newMeeting.title}”`,
+        `Dear ${member.name},\n\nYou have been invited to a meeting:\n\n` +
+        `📅 **Meeting Title:** ${newMeeting.title}\n` +
+        `👤 **Organizer:** ${newMeeting.organizer}\n` +
+        `📅 **Date & Time:** ${formattedStart} - ${formattedEnd}\n` +
+        `📍 **Location:** ${newMeeting.roomId}\n\n` +
+        `Please mark your calendar.\n\nLooking forward to your participation.\n\nBest regards,\nWacspace Team`
       );
     });
 
